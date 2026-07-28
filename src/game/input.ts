@@ -8,14 +8,18 @@
 
 export type Intent = "left" | "right" | "jump" | "start";
 
+/** Horizontal travel, in CSS pixels, that commits a drag to a lane change. */
+const SWIPE = 30;
+
 export class Input {
   private readonly queue: Intent[] = [];
-  /** Held state — the jump arc uses this for variable jump height. */
-  jumpHeld = false;
 
-  private touchX = 0;
-  private touchY = 0;
-  private touchTime = 0;
+  private keyJumpHeld = false;
+  private touchHeld = false;
+
+  /** Swipe origin, re-armed after each committed swipe so drags can chain. */
+  private originX = 0;
+  private originY = 0;
 
   private readonly target: HTMLElement;
 
@@ -24,8 +28,19 @@ export class Input {
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
     target.addEventListener("pointerdown", this.onPointerDown);
-    target.addEventListener("pointerup", this.onPointerUp);
+    target.addEventListener("pointermove", this.onPointerMove);
+    target.addEventListener("pointerup", this.onPointerEnd);
+    target.addEventListener("pointercancel", this.onPointerEnd);
     window.addEventListener("blur", this.onBlur);
+  }
+
+  /**
+   * Held state — the jump arc reads this for variable jump height. A finger on
+   * the glass counts as holding, so a long press on mobile gives the same tall
+   * jump that holding Space does.
+   */
+  get jumpHeld(): boolean {
+    return this.keyJumpHeld || this.touchHeld;
   }
 
   /** Drain the queue. The caller consumes every intent produced since last frame. */
@@ -39,7 +54,9 @@ export class Input {
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
     this.target.removeEventListener("pointerdown", this.onPointerDown);
-    this.target.removeEventListener("pointerup", this.onPointerUp);
+    this.target.removeEventListener("pointermove", this.onPointerMove);
+    this.target.removeEventListener("pointerup", this.onPointerEnd);
+    this.target.removeEventListener("pointercancel", this.onPointerEnd);
     window.removeEventListener("blur", this.onBlur);
   }
 
@@ -63,7 +80,7 @@ export class Input {
       case "KeyW":
         e.preventDefault();
         if (!e.repeat) this.push("jump");
-        this.jumpHeld = true;
+        this.keyJumpHeld = true;
         break;
       case "Enter":
       case "KeyR":
@@ -76,37 +93,53 @@ export class Input {
 
   private onKeyUp = (e: KeyboardEvent) => {
     if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") {
-      this.jumpHeld = false;
+      this.keyJumpHeld = false;
     }
   };
 
   private onBlur = () => {
-    this.jumpHeld = false;
+    this.keyJumpHeld = false;
+    this.touchHeld = false;
     this.queue.length = 0;
   };
 
+  /**
+   * Touch fires the jump on *press*, not release.
+   *
+   * Waiting for the finger to lift to decide "tap or swipe?" costs the length
+   * of the gesture in latency — 100ms or so of the game ignoring you, which is
+   * exactly the window where a jump matters. So a press always jumps, and a
+   * horizontal drag additionally changes lane the moment it crosses the
+   * threshold. Jumping when you meant to dodge is harmless: pylons are too tall
+   * to clear anyway, so the lane change is what saves you either way.
+   */
   private onPointerDown = (e: PointerEvent) => {
-    this.touchX = e.clientX;
-    this.touchY = e.clientY;
-    this.touchTime = performance.now();
-    this.jumpHeld = true;
+    this.originX = e.clientX;
+    this.originY = e.clientY;
+    this.touchHeld = true;
+    // Keep receiving moves even if the finger slides off the canvas.
+    this.target.setPointerCapture?.(e.pointerId);
+    this.push("start");
+    this.push("jump");
   };
 
-  private onPointerUp = (e: PointerEvent) => {
-    this.jumpHeld = false;
-    const dx = e.clientX - this.touchX;
-    const dy = e.clientY - this.touchY;
-    const elapsed = performance.now() - this.touchTime;
-    const SWIPE = 32;
+  private onPointerMove = (e: PointerEvent) => {
+    if (!this.touchHeld) return;
 
-    if (elapsed < 600 && Math.abs(dx) > SWIPE && Math.abs(dx) > Math.abs(dy)) {
-      this.push(dx > 0 ? "right" : "left");
-    } else if (elapsed < 600 && dy < -SWIPE) {
-      this.push("jump");
-    } else if (Math.abs(dx) < SWIPE && Math.abs(dy) < SWIPE) {
-      // A plain tap both starts a run and jumps during one.
-      this.push("start");
-      this.push("jump");
+    const dx = e.clientX - this.originX;
+    const dy = e.clientY - this.originY;
+    if (Math.abs(dx) < SWIPE || Math.abs(dx) < Math.abs(dy)) return;
+
+    this.push(dx > 0 ? "right" : "left");
+    // Re-arm from here so one continuous drag can cross two lanes.
+    this.originX = e.clientX;
+    this.originY = e.clientY;
+  };
+
+  private onPointerEnd = (e: PointerEvent) => {
+    this.touchHeld = false;
+    if (this.target.hasPointerCapture?.(e.pointerId)) {
+      this.target.releasePointerCapture(e.pointerId);
     }
   };
 }

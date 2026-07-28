@@ -19,9 +19,15 @@
   --bone-24: rgb(232 227 217 / 0.24);
   --bone-45: rgb(232 227 217 / 0.45);
 
-  --gutter: clamp(0.875rem, 2.4vw, 2rem);
+  --gutter: clamp(0.75rem, 2.4vw, 2rem);
   --label: clamp(0.5rem, 1.05vw, 0.625rem);
   --rule: 1px;
+
+  /* Notches and home indicators. Zero everywhere that has neither. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
 
   --clip: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
 }
@@ -58,7 +64,13 @@ body {
 .stage {
   position: fixed;
   inset: 0;
+  /* dvh tracks mobile browser chrome as it collapses; the fixed inset is the
+     fallback for anything that doesn't support it. */
+  height: 100dvh;
   isolation: isolate;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .viewport {
@@ -79,7 +91,8 @@ body {
   inset: 0;
   z-index: 2;
   pointer-events: none;
-  padding: var(--gutter);
+  padding: calc(var(--gutter) + var(--safe-top)) calc(var(--gutter) + var(--safe-right))
+    calc(var(--gutter) + var(--safe-bottom)) calc(var(--gutter) + var(--safe-left));
   display: grid;
   grid-template-rows: auto 1fr auto;
   gap: var(--gutter);
@@ -88,7 +101,10 @@ body {
 /* The frame: four inset rules with tick marks biting into the corners. */
 .frame {
   position: absolute;
-  inset: calc(var(--gutter) * 0.55);
+  top: calc(var(--gutter) * 0.55 + var(--safe-top));
+  right: calc(var(--gutter) * 0.55 + var(--safe-right));
+  bottom: calc(var(--gutter) * 0.55 + var(--safe-bottom));
+  left: calc(var(--gutter) * 0.55 + var(--safe-left));
   border: var(--rule) solid var(--bone-12);
   pointer-events: none;
 }
@@ -240,10 +256,22 @@ body {
 }
 
 .velocity__value {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.9em;
   font-size: var(--label);
   font-weight: 700;
   letter-spacing: 0.28em;
   color: var(--bone-45);
+}
+
+/* Gesture hints, shown on the start curtain in place of the keyboard legend. */
+.gestures {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 0.5rem;
 }
 
 /* --------------------------------------------------------------- key legend */
@@ -511,8 +539,8 @@ kbd {
 
 .mute {
   position: absolute;
-  right: calc(var(--gutter) * 1.35);
-  bottom: calc(var(--gutter) * 1.35);
+  right: calc(var(--gutter) * 1.35 + var(--safe-right));
+  bottom: calc(var(--gutter) * 1.35 + var(--safe-bottom));
   z-index: 4;
   pointer-events: auto;
   display: grid;
@@ -652,12 +680,169 @@ kbd {
   }
 }
 
-@media (max-width: 640px) {
+/* ============================================================== responsive
+   Three axes matter here, and they are not the same axis:
+     - narrow width  → the keyboard legend is meaningless, tighten the HUD
+     - short height  → the curtains have to give up ornament to fit
+     - coarse input  → touch targets grow to something thumb-sized
+   ========================================================================== */
+
+/* --- Narrow: phones in portrait, small windows -------------------------- */
+@media (max-width: 680px) {
+  :root {
+    --gutter: 0.8rem;
+  }
+
+  /* Keyboard hints are noise on a touch device; the start curtain teaches the
+     gestures instead. */
   .legend {
     display: none;
   }
 
+  .readout--primary .readout__value {
+    font-size: clamp(2.5rem, 13vw, 3.75rem);
+  }
+
+  .readout--secondary .readout__value {
+    font-size: 1.1rem;
+  }
+
+  .velocity__bar {
+    height: 14px;
+  }
+
+  .velocity__value {
+    font-size: 0.5rem;
+    letter-spacing: 0.18em;
+  }
+
   .sheet {
+    width: min(30rem, 100%);
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .sheet__cell {
+    padding: 0.8rem 0.85rem;
+  }
+
+  .tagline {
+    margin-top: 1.2rem;
+    line-height: 1.9;
+    letter-spacing: 0.22em;
+  }
+
+  .rule {
+    margin: 1.4rem 0;
+    width: min(52ch, 82vw);
+  }
+
+  .wordmark {
+    font-size: clamp(3.25rem, 22vw, 6rem);
+  }
+
+  .mute {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+}
+
+/* --- Very narrow: 320–360px handsets ------------------------------------ */
+@media (max-width: 380px) {
+  .eyebrow {
+    letter-spacing: 0.34em;
+    font-size: 0.5rem;
+  }
+
+  .sheet__value {
+    font-size: 1.25rem;
+  }
+}
+
+/* --- Short: phones in landscape, where vertical room is the constraint --- */
+@media (max-height: 520px) and (orientation: landscape) {
+  :root {
+    --gutter: 0.7rem;
+  }
+
+  .readout--primary .readout__value {
+    font-size: clamp(2rem, 7vh, 3rem);
+  }
+
+  .wordmark {
+    font-size: clamp(2.5rem, 15vh, 5rem);
+  }
+
+  .wordmark--dead {
+    font-size: clamp(2rem, 12vh, 3.5rem);
+  }
+
+  /* Ornament is the first thing to go when there is no room for it. */
+  .tagline,
+  .curtain .velocity__value {
+    display: none;
+  }
+
+  .rule {
+    margin: 0.9rem 0;
+  }
+
+  .sheet {
+    grid-template-columns: repeat(4, 1fr);
+    margin-bottom: 1.1rem;
+  }
+
+  .sheet__cell {
+    padding: 0.6rem 0.7rem;
+  }
+
+  .sheet__value {
+    font-size: 1.15rem;
+  }
+
+  .badge {
+    margin-bottom: 0.7rem;
+  }
+
+  .prompt {
+    padding: 0.6rem 1rem;
+  }
+}
+
+/* --- Coarse pointers: thumbs need more than a hairline to hit ----------- */
+@media (pointer: coarse) {
+  .prompt {
+    padding: 1rem 1.5rem;
+    min-height: 3rem;
+  }
+
+  .mute {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  /* Hover styling on touch sticks after a tap and looks broken. */
+  .prompt:hover {
+    background: rgb(255 90 31 / 0.07);
+    color: var(--bone);
+  }
+
+  .prompt:hover::before {
+    background: var(--signal);
+  }
+
+  .mute:hover {
+    color: var(--bone-45);
+    border-color: var(--bone-12);
+  }
+}
+
+/* Scanlines at 3px are a moiré generator on a 3x phone display. */
+@media (max-width: 680px) {
+  .scanlines {
+    opacity: 0.28;
+  }
+
+  .grain {
+    opacity: 0.1;
   }
 }

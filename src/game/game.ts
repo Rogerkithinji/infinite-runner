@@ -29,6 +29,17 @@ export class Game {
   private readonly scene = new THREE.Scene();
   private readonly camera: THREE.PerspectiveCamera;
 
+  /**
+   * Everything simulated lives under one group so portrait screens can shrink
+   * the whole world to fit. Scaling a parent leaves every *relative* distance
+   * untouched, so collision, physics and speed all keep working in unscaled
+   * local units — only the framing changes.
+   */
+  private readonly world = new THREE.Group();
+  private worldScale = 1;
+  private lightGain = 1;
+  private cameraHeight = 3.7;
+
   private readonly track = new Track();
   private readonly player = new Player();
   private readonly field = new ObstacleField();
@@ -42,6 +53,7 @@ export class Game {
   private readonly intents: Intent[] = [];
   private readonly keyLight: THREE.DirectionalLight;
   private readonly playerLight: THREE.PointLight;
+  private readonly fog: THREE.Fog;
 
   private frame = 0;
   private lastTime = 0;
@@ -64,16 +76,21 @@ export class Game {
     this.container = container;
     this.onSnapshot = onSnapshot;
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Phones have absurd pixel ratios and a fraction of the fill rate. Capping
+    // lower there costs very little visually and buys back a lot of frame time.
+    const coarse = window.matchMedia("(pointer: coarse)").matches;
+    this.renderer = new THREE.WebGLRenderer({ antialias: !coarse, powerPreference: "high-performance" });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, coarse ? 1.75 : 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
     this.renderer.setClearColor(PALETTE.void, 1);
     container.appendChild(this.renderer.domElement);
 
-    this.scene.fog = new THREE.Fog(PALETTE.void, WORLD.fogNear, WORLD.fogFar);
-    this.scene.add(this.track.group, this.field.group, this.player.group);
+    this.fog = new THREE.Fog(PALETTE.void, WORLD.fogNear, WORLD.fogFar);
+    this.scene.fog = this.fog;
+    this.world.add(this.track.group, this.field.group, this.player.group);
+    this.scene.add(this.world);
 
     this.camera = new THREE.PerspectiveCamera(62, 1, 0.1, 400);
     this.camera.position.set(0, 3.7, 8.4);
@@ -156,11 +173,39 @@ export class Game {
   private resize = () => {
     const width = this.container.clientWidth || window.innerWidth;
     const height = this.container.clientHeight || window.innerHeight;
+    const aspect = width / height;
+
     this.renderer.setSize(width, height, false);
-    this.camera.aspect = width / height;
-    // Widen the field of view on portrait screens so the lanes stay readable.
-    this.camera.fov = height > width ? 78 : 62;
+    this.camera.aspect = aspect;
+    this.camera.fov = aspect < 1 ? 74 : 62;
     this.camera.updateProjectionMatrix();
+
+    // A perspective camera's `fov` is *vertical*, so a tall phone screen sees a
+    // very narrow slice horizontally — narrow enough that the outer lanes fall
+    // off the sides. Work out how wide the world actually is at the player's
+    // depth, and shrink everything until the full track plus its rails fits.
+    const TRACK_HALF_WIDTH = 4.6;
+    const NOMINAL_DEPTH = 9.2;
+    const halfVisible =
+      NOMINAL_DEPTH * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2) * aspect;
+
+    this.worldScale = THREE.MathUtils.clamp(halfVisible / TRACK_HALF_WIDTH, 0.55, 1);
+    this.world.scale.setScalar(this.worldScale);
+
+    // Scale the fog to match, or a shrunken world would sit entirely inside the
+    // clear band and lose its horizon.
+    this.fog.near = WORLD.fogNear * this.worldScale;
+    this.fog.far = WORLD.fogFar * this.worldScale;
+
+    // The point light's falloff is in world units, and with decay=2 its
+    // brightness goes as 1/r² — both have to follow the scale or the cube ends
+    // up blown out on a phone.
+    this.playerLight.distance = 12 * this.worldScale;
+    this.lightGain = this.worldScale * this.worldScale;
+
+    // Drop the camera a little as the world shrinks, so portrait doesn't drift
+    // toward a top-down view.
+    this.cameraHeight = 3.7 * (0.58 + 0.42 * this.worldScale);
   };
 
   // --------------------------------------------------------------- main loop
@@ -279,9 +324,13 @@ export class Game {
   private render(dt: number): void {
     const smooth = 1 - Math.exp(-6 * dt);
 
+    // The camera lives outside the scaled world, so read the cube's position
+    // through the same scale before using it out here.
+    const playerWorldX = this.player.group.position.x * this.worldScale;
+
     // The camera trails the cube laterally instead of locking to it — the lag
     // is what makes a lane change feel like it had weight.
-    const targetX = this.player.group.position.x * 0.42;
+    const targetX = playerWorldX * 0.42;
     this.camera.position.x += (targetX - this.camera.position.x) * smooth;
 
     // Pull back and drop slightly as the run speeds up.
@@ -290,18 +339,19 @@ export class Game {
     this.camera.position.z += (targetZ - this.camera.position.z) * smooth;
 
     if (this.shake > 0.001) {
-      const magnitude = this.shake * 0.35;
+      const magnitude = this.shake * 0.35 * this.worldScale;
       this.camera.position.x += (Math.random() - 0.5) * magnitude;
       this.camera.position.y += (Math.random() - 0.5) * magnitude * 0.6;
       this.shake *= Math.exp(-5 * dt);
     } else {
-      this.camera.position.y += (3.7 - this.camera.position.y) * smooth;
+      this.camera.position.y += (this.cameraHeight - this.camera.position.y) * smooth;
     }
 
-    this.camera.lookAt(this.player.group.position.x * 0.25, 1.1, -12);
+    this.camera.lookAt(playerWorldX * 0.25, 1.1 * this.worldScale, -12);
 
-    this.playerLight.position.x = this.player.group.position.x;
-    this.playerLight.intensity = this.status === "over" ? 26 : 14;
+    this.playerLight.position.x = playerWorldX;
+    this.playerLight.position.y = 1.6 * this.worldScale;
+    this.playerLight.intensity = (this.status === "over" ? 26 : 14) * this.lightGain;
 
     this.renderer.render(this.scene, this.camera);
   }

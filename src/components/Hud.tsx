@@ -20,6 +20,23 @@ function Padded({ value, width }: { value: number; width: number }) {
   );
 }
 
+/**
+ * True on touch devices. Starts false so the server render and the first client
+ * render agree, then corrects itself on mount — a hydration mismatch over a
+ * control hint is not worth the trade.
+ */
+function useCoarsePointer(): boolean {
+  const [coarse, setCoarse] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(pointer: coarse)");
+    const sync = () => setCoarse(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+  return coarse;
+}
+
 function clock(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
@@ -36,6 +53,7 @@ export function Hud({
   onToggleMute: () => void;
 }) {
   const { status, score, best, speed, topSpeed, nearMisses, elapsed, muted } = snapshot;
+  const touch = useCoarsePointer();
 
   // Flash the near-miss readout for a moment whenever it climbs.
   const [hot, setHot] = useState(false);
@@ -87,7 +105,9 @@ export function Hud({
             ))}
           </div>
           <span className="velocity__value">
-            {speed.toFixed(1)} M/S · T+{clock(elapsed)} · BEST {String(best).padStart(6, "0")}
+            <span>{speed.toFixed(1)} M/S</span>
+            <span>T+{clock(elapsed)}</span>
+            <span>BEST {String(best).padStart(6, "0")}</span>
           </span>
         </div>
 
@@ -126,14 +146,32 @@ export function Hud({
               The corridor only gets faster.
             </p>
             <button className="prompt" onClick={onStart} type="button">
-              Press Space to launch
+              {touch ? "Tap to launch" : "Press Space to launch"}
             </button>
-            <span
-              className="velocity__value"
-              style={{ marginTop: "1.6rem", letterSpacing: "0.24em" }}
-            >
-              Fixed-step sim · pooled geometry · AABB collision
-            </span>
+
+            {touch ? (
+              <div className="gestures">
+                <span className="legend__item">
+                  <span className="legend__keys">
+                    <kbd>Swipe</kbd>
+                  </span>
+                  <span className="legend__what">Lane</span>
+                </span>
+                <span className="legend__item">
+                  <span className="legend__keys">
+                    <kbd>Hold</kbd>
+                  </span>
+                  <span className="legend__what">Higher vault</span>
+                </span>
+              </div>
+            ) : (
+              <span
+                className="velocity__value"
+                style={{ marginTop: "1.6rem", letterSpacing: "0.24em", justifyContent: "center" }}
+              >
+                Fixed-step sim · pooled geometry · AABB collision
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -167,7 +205,7 @@ export function Hud({
               </div>
             </div>
             <button className="prompt" onClick={onStart} type="button">
-              Press R to redeploy
+              {touch ? "Tap to redeploy" : "Press R to redeploy"}
             </button>
           </div>
         </div>
