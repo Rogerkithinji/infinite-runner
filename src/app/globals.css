@@ -1,26 +1,663 @@
 @import "tailwindcss";
 
+/* ==========================================================================
+   RUNNER — brutalist telemetry
+   Void black, bone white, one sodium-orange signal colour. Everything on
+   screen is framed as instrumentation: hard edges, clipped corners, tracked-
+   out labels, tabular numerals. No rounded rectangles anywhere.
+   ========================================================================== */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --void: #08090b;
+  --ink: #0e1014;
+  --bone: #e8e3d9;
+  --signal: #ff5a1f;
+  --coolant: #35d6d0;
+  --danger: #ff2d55;
+
+  --bone-12: rgb(232 227 217 / 0.12);
+  --bone-24: rgb(232 227 217 / 0.24);
+  --bone-45: rgb(232 227 217 / 0.45);
+
+  --gutter: clamp(0.875rem, 2.4vw, 2rem);
+  --label: clamp(0.5rem, 1.05vw, 0.625rem);
+  --rule: 1px;
+
+  --clip: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-void: var(--void);
+  --color-bone: var(--bone);
+  --color-signal: var(--signal);
+  --font-display: var(--font-display);
+  --font-mono: var(--font-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--void);
+  color: var(--bone);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-feature-settings: "tnum" 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------------- structure */
+
+.stage {
+  position: fixed;
+  inset: 0;
+  isolation: isolate;
+}
+
+.viewport {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.viewport canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  padding: var(--gutter);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: var(--gutter);
+}
+
+/* The frame: four inset rules with tick marks biting into the corners. */
+.frame {
+  position: absolute;
+  inset: calc(var(--gutter) * 0.55);
+  border: var(--rule) solid var(--bone-12);
+  pointer-events: none;
+}
+
+.frame::before,
+.frame::after {
+  content: "";
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border: var(--rule) solid var(--signal);
+}
+
+.frame::before {
+  top: -1px;
+  left: -1px;
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.frame::after {
+  right: -1px;
+  bottom: -1px;
+  border-left: 0;
+  border-top: 0;
+}
+
+/* ----------------------------------------------------------------- readouts */
+
+.telemetry {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gutter);
+}
+
+.telemetry--bottom {
+  align-items: flex-end;
+}
+
+.label {
+  display: block;
+  font-size: var(--label);
+  font-weight: 700;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--bone-45);
+  margin-bottom: 0.5em;
+  white-space: nowrap;
+}
+
+.label::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 0.7em;
+  background: var(--signal);
+  vertical-align: middle;
+  translate: 0 -1px;
+}
+
+.readout {
+  line-height: 0.86;
+}
+
+.readout__value {
+  font-family: var(--font-display), sans-serif;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.045em;
+  display: flex;
+  align-items: baseline;
+  gap: 0.28em;
+}
+
+.readout--primary .readout__value {
+  font-size: clamp(2.75rem, 8.5vw, 6rem);
+  text-shadow: 0 0 42px rgb(255 90 31 / 0.28);
+}
+
+.readout--secondary {
+  text-align: right;
+}
+
+.readout--secondary .readout__value {
+  font-size: clamp(1rem, 2.4vw, 1.6rem);
+  justify-content: flex-end;
+  color: var(--bone-45);
+}
+
+.readout--secondary .label {
+  margin-bottom: 0.65em;
+}
+
+.readout__unit {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.3em;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: var(--signal);
+  translate: 0 -0.15em;
+}
+
+.readout--secondary .readout__unit {
+  font-size: 0.5em;
+}
+
+/* Near-miss counter flashes coolant-cyan each time it ticks up. */
+.readout--near .readout__value {
+  color: var(--bone-45);
+  transition: color 420ms ease-out;
+}
+
+.readout--near[data-hot="true"] .readout__value {
+  color: var(--coolant);
+  transition: none;
+}
+
+/* ------------------------------------------------------------ velocity bar */
+
+.velocity {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.velocity__bar {
+  display: flex;
+  gap: 3px;
+  height: 18px;
+  align-items: stretch;
+}
+
+.velocity__seg {
+  width: clamp(4px, 0.9vw, 7px);
+  background: var(--bone-12);
+  transform: skewX(-16deg);
+  transition: background-color 140ms linear, box-shadow 140ms linear;
+}
+
+.velocity__seg[data-on="true"] {
+  background: var(--signal);
+  box-shadow: 0 0 10px rgb(255 90 31 / 0.55);
+}
+
+.velocity__seg[data-on="true"]:nth-child(n + 15) {
+  background: var(--danger);
+  box-shadow: 0 0 12px rgb(255 45 85 / 0.6);
+}
+
+.velocity__value {
+  font-size: var(--label);
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  color: var(--bone-45);
+}
+
+/* --------------------------------------------------------------- key legend */
+
+.legend {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.legend__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.62rem;
+  border: var(--rule) solid var(--bone-12);
+  background: rgb(8 9 11 / 0.55);
+  backdrop-filter: blur(6px);
+  clip-path: var(--clip);
+}
+
+.legend__keys {
+  display: flex;
+  gap: 2px;
+}
+
+kbd {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.58rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.32em 0.5em;
+  color: var(--void);
+  background: var(--bone);
+}
+
+.legend__what {
+  font-size: var(--label);
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--bone-45);
+}
+
+/* ---------------------------------------------------------------- curtains */
+
+.curtain {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  text-align: center;
+  padding: var(--gutter);
+  background: radial-gradient(120% 80% at 50% 55%, rgb(8 9 11 / 0.55) 0%, rgb(8 9 11 / 0.9) 70%);
+  animation: curtain-in 320ms ease-out both;
+}
+
+@keyframes curtain-in {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(2px);
+  }
+}
+
+.eyebrow {
+  font-size: clamp(0.55rem, 1.3vw, 0.7rem);
+  font-weight: 700;
+  letter-spacing: 0.5em;
+  text-transform: uppercase;
+  color: var(--signal);
+  margin-bottom: 1.1rem;
+  padding-left: 0.5em;
+}
+
+.wordmark {
+  font-family: var(--font-display), sans-serif;
+  font-weight: 800;
+  font-size: clamp(3.5rem, 17vw, 11rem);
+  line-height: 0.78;
+  letter-spacing: -0.06em;
+  text-transform: uppercase;
+  /* Deliberate print misregistration: a cyan and an orange plate, off by a
+     hair, the way a cheap two-colour press would land them. */
+  text-shadow:
+    0.055em 0.03em 0 var(--signal),
+    -0.035em -0.02em 0 rgb(53 214 208 / 0.75);
+}
+
+.wordmark--dead {
+  font-size: clamp(2.4rem, 11vw, 7rem);
+  color: var(--bone);
+  text-shadow:
+    0.05em 0.028em 0 var(--danger),
+    -0.03em -0.018em 0 rgb(53 214 208 / 0.6);
+  animation: glitch 3.2s steps(1) infinite;
+}
+
+@keyframes glitch {
+  0%,
+  92% {
+    transform: translate(0, 0);
+  }
+  93% {
+    transform: translate(-3px, 1px) skewX(2deg);
+  }
+  95% {
+    transform: translate(4px, -1px) skewX(-3deg);
+  }
+  97% {
+    transform: translate(-2px, 0) skewX(1deg);
+  }
+  99% {
+    transform: translate(0, 0);
+  }
+}
+
+.tagline {
+  margin-top: 1.6rem;
+  font-size: clamp(0.56rem, 1.25vw, 0.72rem);
+  font-weight: 500;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--bone-45);
+  max-width: 42ch;
+  line-height: 2;
+}
+
+.tagline b {
+  color: var(--bone);
+  font-weight: 700;
+}
+
+.rule {
+  width: min(52ch, 74vw);
+  height: var(--rule);
+  margin: 1.9rem 0;
+  background: linear-gradient(90deg, transparent, var(--bone-24) 15%, var(--bone-24) 85%, transparent);
+  position: relative;
+}
+
+.rule::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  translate: -50% 0;
+  background: var(--signal);
+  rotate: 45deg;
+}
+
+.prompt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  font-size: clamp(0.62rem, 1.5vw, 0.8rem);
+  font-weight: 800;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--bone);
+  padding: 0.85rem 1.4rem;
+  border: var(--rule) solid var(--signal);
+  background: rgb(255 90 31 / 0.07);
+  clip-path: var(--clip);
+  pointer-events: auto;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.prompt::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  background: var(--signal);
+  animation: pulse 1.15s ease-in-out infinite;
+}
+
+.prompt:hover,
+.prompt:focus-visible {
+  background: var(--signal);
+  color: var(--void);
+  outline: none;
+}
+
+.prompt:hover::before,
+.prompt:focus-visible::before {
+  background: var(--void);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.25;
+    transform: scale(0.7);
+  }
+}
+
+/* ------------------------------------------------------------- score sheet */
+
+.sheet {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(8.5rem, 1fr));
+  gap: var(--rule);
+  background: var(--bone-12);
+  border: var(--rule) solid var(--bone-12);
+  margin-bottom: 2rem;
+  width: min(46ch, 84vw);
+}
+
+.sheet__cell {
+  background: rgb(14 16 20 / 0.92);
+  padding: 1rem 1.15rem 1.05rem;
+  text-align: left;
+}
+
+.sheet__value {
+  font-family: var(--font-display), sans-serif;
+  font-weight: 800;
+  font-size: clamp(1.4rem, 4vw, 2.1rem);
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.sheet__cell--hero .sheet__value {
+  color: var(--signal);
+}
+
+.badge {
+  display: inline-block;
+  font-size: var(--label);
+  font-weight: 800;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--void);
+  background: var(--coolant);
+  padding: 0.45em 0.85em 0.4em;
+  margin-bottom: 1.3rem;
+  animation: record 900ms ease-in-out infinite alternate;
+}
+
+@keyframes record {
+  from {
+    box-shadow: 0 0 0 rgb(53 214 208 / 0);
+  }
+  to {
+    box-shadow: 0 0 26px rgb(53 214 208 / 0.65);
+  }
+}
+
+/* ------------------------------------------------------------------ mute */
+
+.mute {
+  position: absolute;
+  right: calc(var(--gutter) * 1.35);
+  bottom: calc(var(--gutter) * 1.35);
+  z-index: 4;
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  border: var(--rule) solid var(--bone-12);
+  background: rgb(8 9 11 / 0.6);
+  color: var(--bone-45);
+  font-family: inherit;
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  clip-path: var(--clip);
+  transition: color 160ms ease, border-color 160ms ease;
+}
+
+.mute:hover {
+  color: var(--signal);
+  border-color: var(--signal);
+}
+
+/* --------------------------------------------------------- film treatment */
+
+.grain,
+.scanlines,
+.vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.scanlines {
+  background: repeating-linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 0.22) 0px,
+    rgb(0 0 0 / 0.22) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  opacity: 0.5;
+  mix-blend-mode: multiply;
+}
+
+.grain {
+  opacity: 0.16;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation: grain-shift 640ms steps(4) infinite;
+}
+
+@keyframes grain-shift {
+  0% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(-3%, 2%);
+  }
+  50% {
+    transform: translate(2%, -3%);
+  }
+  75% {
+    transform: translate(-2%, -2%);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+.vignette {
+  background: radial-gradient(115% 90% at 50% 48%, transparent 42%, rgb(4 4 6 / 0.72) 100%);
+}
+
+/* ---------------------------------------------------------- entrance stagger */
+
+.stagger > * {
+  animation: rise 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.stagger > *:nth-child(1) {
+  animation-delay: 60ms;
+}
+.stagger > *:nth-child(2) {
+  animation-delay: 150ms;
+}
+.stagger > *:nth-child(3) {
+  animation-delay: 240ms;
+}
+.stagger > *:nth-child(4) {
+  animation-delay: 330ms;
+}
+.stagger > *:nth-child(5) {
+  animation-delay: 420ms;
+}
+.stagger > *:nth-child(6) {
+  animation-delay: 510ms;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+/* Anything with a hard "cut in from the left" feel on the HUD itself. */
+.hud-in {
+  animation: wipe 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes wipe {
+  from {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .legend {
+    display: none;
+  }
+
+  .sheet {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
